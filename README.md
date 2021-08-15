@@ -1,0 +1,2 @@
+# handwriting_time-series_data_converter
+グラフを手書きで書いて時系列データを生成するツール
