@@ -140,7 +140,7 @@
             function move(mouseEvent) {
                 mouseEvent.preventDefault();
                 let [x, y] = mousePosOnCanvas(mouseEvent);
-                if (isDrawing){
+                if (isDrawing && x >= 0 && x <= mainCanvas.width && y >= 0 && y <= mainCanvas.height){
                     console.log("move " + [x, y] +", pre "+ [mouseX, mouseY]);
                     //drawLine(x, y ,mouseX, mouseY, "#000000", 2);
                     drawDot(mainCanvas, x, y, "#000000", mainCanvas.dotsize);
