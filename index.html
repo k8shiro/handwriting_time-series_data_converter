@@ -1,0 +1,330 @@
+
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>Handwritten Time Series Data Generator</title>
+        <meta name="description" content="グラフを手書きで書いて時系列データを生成するツール" />
+        <meta name="viewport" content="width=device-width,minimum-scale=1,initial-scale=1">
+        <meta http-equiv="X-UA-Compatible" content="IE=Edge">
+
+        <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text x=%2250%%22 y=%2250%%22 style=%22dominant-baseline:central;text-anchor:middle;font-size:90px;%22>〽️</text></svg>">
+        
+        <!-- twitterのOGPタグ -->
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:site" content="@ユーザー名" />
+        <meta name="twitter:description" content="ブラウザ上で手書きしたグラフを時系列データとして出力するツール" />
+        <!-- <meta name="twitter:image:src" content="サムネイル画像URL" /> -->
+
+        <style type="text/css">
+            label{
+                display:block;
+                float:left;
+                width:200px;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>手書き時系列データ生成器</h1>
+        <p>手書きしたグラフから時系列データを生成するツールです。Unixtimeと値をcsv形式で出力します。</p>
+
+        <ul>
+            <li>使い方
+                <ul>
+                    <li>グラフエリアの高さと幅を設定し"グラフエリアの設定を更新"</li>
+                    <li>グラフエリア内でマウスをクリック・ドラッグしてグラフ描画</li>
+                    <li>時系列データ出力の設定を入力し"時系列データ生成"</li>
+                    <li>ページ下部に生成されるリンクからcsvファイルをダウンロード</li>
+                </ul>
+            </li>
+            <li>注意事項
+                <ul>
+                    <li>グラフの描画時にマウスを速く動かすと生成データが粗くなります</li>
+                    <li>同じx座標上に複数のラインがある場合は後に引かれたラインのデータが適用されます</li>
+                    <li>グラフエリアで作成したドットの座標をもとにデータの間隔(秒)ごとに自動で適当な時系列データが生成されます</li>
+                    <li>ドットは2つ以上描画されている必要があります</li>
+                    <li>データの間隔(秒)を0にした場合、ドットの座標で直接データを生成します</li>
+                </ul>
+            </li>
+        </ul>
+        
+        <div>
+            グラフエリア<br>
+            <canvas id="main-canvas">
+                グラフ作成用のキャンバス
+            </canvas>
+        </div>
+
+        <div>
+            <div class="canvas-settings">
+                <label for="canvas-height">グラフエリアの高さ</label>
+                <input type="number" name="canvas-height" id="canvas-height" maxlength="5" value="300" />
+            </div>
+            <div class="canvas-settings">
+                <label for="canvas-width">グラフエリアの幅</label>
+                <input type="number" name="canvas-width" id="canvas-width" maxlength="5" value="500" />
+            </div>
+            <div class="canvas-settings">
+                <label for="canvas-dotsize">ドットサイズ</label>
+                <input type="number" name="canvas-dotsize" id="canvas-dotsize" maxlength="5" value="1" />
+            </div>
+            <input type="button" value="グラフエリアの設定を更新" id="canvas-update" /> ※ グラフエリアが初期化されます
+        </div>
+        <div>
+            <div class="export-settings">
+                <label for="export-starttime">グラフエリアの開始時刻</label>
+                <input type="datetime-local" name="export-starttime" id="export-starttime" maxlength="5" value="2021-08-14T00:00:00" />
+            </div>
+            <div class="export-settings">
+                <label for="export-endtime">グラフエリアの終了時刻</label>
+                <input type="datetime-local" name="export-endtime" id="export-endtime" maxlength="5" value="2021-08-15T00:00:00" />
+            </div>
+            <div class="export-settings">
+                <label for="export-maxvalue">グラフエリアの最大値</label>
+                <input type="number" name="export-maxvalue" id="export-maxvalue" maxlength="5" value="1000" />
+            </div>
+            <div class="export-settings">
+                <label for="export-minvalue">グラフエリアの最小値</label>
+                <input type="number" name="export-minvalue" id="export-minvalue" maxlength="5" value="0" />
+            </div>
+            <div class="export-settings">
+                <label for="export-interval">データの間隔(秒)</label>
+                <input type="number" name="export-interval" id="export-interval" maxlength="5" value="60" />
+            </div>
+            <input type="button" value="時系列データ生成" id="export" />
+        </div>
+
+        <div id="exported" style="display:none">
+            最後に生成された時系列データの外形 ※補完されたデータは描画されていません<br>
+            <canvas id="exported-canvas">
+                生成データ確認用のキャンバス
+            </canvas>
+        
+
+            <ul>
+                <li>生成した時系列データ
+                    <ul id="download-list">
+                    </ul>
+                </li>
+            </ul>
+        </div>
+
+        <script>
+            let mainCanvas = document.getElementById("main-canvas");
+            let isDrawing = false;
+            let [mouseX, mouseY] = [null, null]
+            let graphData = {} 
+            updateCanvas()
+
+            
+            //グラフの手書き処理
+            mainCanvas.addEventListener("mousedown", down, false);
+            window.addEventListener("mouseup", up, false);
+            mainCanvas.addEventListener("mousemove", move, false);
+            mainCanvas.addEventListener("touchstart", down, false);
+            mainCanvas.addEventListener("touchend", up, false);
+            mainCanvas.addEventListener("touchmove", move, false); 
+
+            function down(mouseEvent) {
+                mouseEvent.preventDefault();
+                console.log("down");
+                isDrawing = true
+            };
+            
+            function up(mouseEvent){
+                mouseEvent.preventDefault();
+                console.log("up");
+        		isDrawing = false;
+        	};
+
+            function move(mouseEvent) {
+                mouseEvent.preventDefault();
+                let [x, y] = mousePosOnCanvas(mouseEvent);
+                if (isDrawing){
+                    console.log("move " + [x, y] +", pre "+ [mouseX, mouseY]);
+                    //drawLine(x, y ,mouseX, mouseY, "#000000", 2);
+                    drawDot(mainCanvas, x, y, "#000000", mainCanvas.dotsize);
+                    graphData[x] = y;
+                }
+                mouseX = x;
+                mouseY = y;
+            };
+    
+            function mousePosOnCanvas(mouseEvent) {
+                let [x, y] = [null, null]
+                if (mouseEvent instanceof MouseEvent) {
+                    x = mouseEvent.clientX - mainCanvas.getBoundingClientRect().left;
+                    y = mouseEvent.clientY - mainCanvas.getBoundingClientRect().top;
+                } else {
+                    x = mouseEvent.touches[0].clientX - mainCanvas.getBoundingClientRect().left;
+                    y = mouseEvent.touches[0].clientY - mainCanvas.getBoundingClientRect().top;
+                }
+                return [x, y];
+            };
+
+            function drawLine(canvas, x, y, preX, preY, color, lineWidth){
+                let context = canvas.getContext("2d");
+                context.beginPath();
+                context.moveTo(preX, preY);
+                context.lineTo(x, y);
+                context.strokeStyle = color;
+                context.lineWidth = lineWidth;
+                context.stroke();     
+            }
+
+            function drawDot(canvas, x, y, color, size){
+                let context = canvas.getContext("2d");
+                context.beginPath();
+                context.arc(x, y, size, 0 * Math.PI / 180, 360 * Math.PI / 180, false);
+                context.fillStyle = color;
+                context.fill();
+            }
+
+
+            //キャンバスの設定変更
+            let canvasUpdate = document.getElementById("canvas-update");
+            canvasUpdate.addEventListener("click", updateCanvas);
+            canvasUpdate.addEventListener("click", initGraphData);
+
+            function updateCanvas(){
+                inputWidth = Number(document.getElementById("canvas-width").value);
+                inputHeight = Number(document.getElementById("canvas-height").value);
+                inputDotsize = Number(document.getElementById("canvas-dotsize").value);
+                mainCanvas.width = inputWidth;
+                mainCanvas.height = inputHeight;
+                mainCanvas.dotsize = inputDotsize;
+                mainCanvas.style.border = "1px solid";
+
+                for (let i=5; i <= mainCanvas.height; i+=10) {
+                    drawLine(mainCanvas, mainCanvas.width, i, 0, i, "#ADD8E6", 1);
+                }
+
+                for (let i=5; i <= mainCanvas.width; i+=10) {
+                    drawLine(mainCanvas, i, mainCanvas.height, i, 0, "#ADD8E6", 1);
+                }
+
+                drawLine(mainCanvas, mainCanvas.width, mainCanvas.height/2, 0, mainCanvas.height/2, "#0000FF", 1);
+                drawLine(mainCanvas, mainCanvas.width/2, mainCanvas.height, mainCanvas.width/2, 0, "#0000FF", 1);
+            };
+
+            function initGraphData(){
+                graphData = {}
+            }
+
+
+            let exportButton = document.getElementById("export");
+            exportButton.addEventListener("click", execExport);
+            exportButton.addEventListener("click", showExportedCanvas);
+
+            function execExport() {
+                inputStartTime = document.getElementById("export-starttime").value;
+                inputEndTime = document.getElementById("export-endtime").value;
+                inputInterval = Number(document.getElementById("export-interval").value);
+                startTimestamp = Date.parse(inputStartTime) / 1000;
+                endTimestamp = Date.parse(inputEndTime) / 1000;
+
+                
+                inputMaxValue = Number(document.getElementById("export-maxvalue").value);
+                inputMinValue = Number(document.getElementById("export-minvalue").value);
+                maxValue = inputMaxValue;
+                minValue = inputMinValue;
+
+                graphDataArray = Object.keys(graphData).map((k)=>({ x: k, y: graphData[k] }));
+                if (graphDataArray.length <= 1) {
+                    return
+                }
+
+                let csvText = "";
+
+                if (inputInterval > 0){
+                    let dataIdx = 1
+                    
+                    let preTimestamp  = startTimestamp + (endTimestamp - startTimestamp) * graphDataArray[0].x/mainCanvas.width
+                    let preValue = minValue + (maxValue - minValue) * (mainCanvas.height - graphDataArray[0].y)/mainCanvas.height
+                    let postTimestamp = startTimestamp + (endTimestamp - startTimestamp) * graphDataArray[1].x/mainCanvas.width
+                    let postValue = minValue + (maxValue - minValue) * (mainCanvas.height - graphDataArray[1].y)/mainCanvas.height
+                    let genData = {};
+
+                    for (let timestamp=startTimestamp; timestamp <= endTimestamp; timestamp+=inputInterval) {
+                        if (timestamp > postTimestamp) {
+                            preTimestamp = postTimestamp;
+                            preValue = postValue;
+                            dataIdx += 1;
+                            if (dataIdx >= graphDataArray.length) break;
+                            postTimestamp = startTimestamp + (endTimestamp - startTimestamp) * graphDataArray[dataIdx].x/mainCanvas.width
+                            postValue = minValue + (maxValue - minValue) * (mainCanvas.height - graphDataArray[dataIdx].y)/mainCanvas.height
+                        }
+
+                        if (timestamp < preTimestamp) {
+                            ;
+                        } else if (timestamp < postTimestamp) {
+                            let value = preValue + (postValue - preValue) * (timestamp - preTimestamp)/(postTimestamp - preTimestamp)
+                            csvText += timestamp + ', ' + value + '\n'
+                        }
+                    }
+                } else {
+                    for (let elm of graphDataArray) {
+                        let x = elm.x;
+                        let y = elm.y;
+                        let timestamp = startTimestamp + (endTimestamp - startTimestamp) * x/mainCanvas.width
+                        let value = minValue + (maxValue - minValue) * (mainCanvas.height - y)/mainCanvas.height
+                        console.log(timestamp, value)
+                        csvText += timestamp + ', ' + value + '\n'
+                    }
+                }
+
+                console.log(csvText)
+                
+                let downloadList = document.getElementById("download-list");
+                let now = Date.now()
+                let blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+                let filename = now + "_" + startTimestamp + "-" + endTimestamp + "_" + minValue + "-" + maxValue + ".csv"
+                var link = document.createElement("a");
+                var url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", filename);
+                link.appendChild(document.createTextNode(filename));
+                let li = document.createElement("li");
+                li.appendChild(link);
+                downloadList.appendChild(li);
+            }
+
+            function showExportedCanvas(){
+                document.getElementById("exported").style.display ="block";
+                let exportedCanvas = document.getElementById("exported-canvas");
+                exportedCanvas.width = mainCanvas.width;
+                exportedCanvas.height = mainCanvas.height;
+                exportedCanvas.style.border = "1px solid";
+
+                for (let i=5; i <= exportedCanvas.height; i+=10) {
+                    drawLine(exportedCanvas, exportedCanvas.width, i, 0, i, "#ADD8E6", 1);
+                }
+
+                for (let i=5; i <= exportedCanvas.width; i+=10) {
+                    drawLine(exportedCanvas, i, exportedCanvas.height, i, 0, "#ADD8E6", 1);
+                }
+
+                drawLine(exportedCanvas, exportedCanvas.width, exportedCanvas.height/2, 0, exportedCanvas.height/2, "#0000FF", 1);
+                drawLine(exportedCanvas, exportedCanvas.width/2, exportedCanvas.height, exportedCanvas.width/2, 0, "#0000FF", 1);
+
+                graphDataArray = Object.keys(graphData).map((k)=>({ x: k, y: graphData[k] }));
+
+                let preX = graphDataArray[0].x;
+                let preY = graphDataArray[0].y;
+                for (let elm of graphDataArray.slice(1)) {
+                    let x = elm.x;
+                    let y = elm.y;
+                    drawLine(exportedCanvas, x, y, preX, preY, "#00ff00", 1);
+                    preX = x;
+                    preY = y;
+                }
+
+                for (let elm of graphDataArray) {
+                    let x = elm.x;
+                    let y = elm.y;
+                    drawDot(exportedCanvas, x, y, "#000000", mainCanvas.dotsize)
+                }
+            }
+        </script>
+    </body>
+</html>
