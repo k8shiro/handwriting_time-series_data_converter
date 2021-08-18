@@ -121,7 +121,7 @@
             
             //グラフの手書き処理
             mainCanvas.addEventListener("mousedown", down, false);
-            window.addEventListener("mouseup", up, false);
+            document.body.addEventListener("mouseup", up, false);
             mainCanvas.addEventListener("mousemove", move, false);
             mainCanvas.addEventListener("touchstart", down, false);
             mainCanvas.addEventListener("touchend", up, false);
@@ -134,7 +134,6 @@
             };
             
             function up(mouseEvent){
-                mouseEvent.preventDefault();
                 console.log("up");
         		isDrawing = false;
         	};
